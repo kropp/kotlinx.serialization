@@ -1,18 +1,15 @@
 // This file was automatically generated from serialization-guide.md by Knit tool. Do not edit.
-package example.exampleBuiltin01
+package example.examplePoly02
 
 import kotlinx.serialization.*
 import kotlinx.serialization.json.*
 
-import kotlin.math.*
-
 @Serializable
-class Data(
-    val answer: Int,
-    val pi: Double
-)                     
+open class Repository(val name: String)
+
+class OwnedRepository(name: String, val owner: String) : Repository(name)
 
 fun main() {
-    val data = Data(42, PI)
+    val data = OwnedRepository("kotlinx.coroutines", "kotlin")
     println(Json.encodeToString(data))
-}
+}  

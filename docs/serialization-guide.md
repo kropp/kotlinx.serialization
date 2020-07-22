@@ -36,6 +36,12 @@
   * [Sets and other collections](#sets-and-other-collections)
   * [Deserializing collections](#deserializing-collections)
   * [Maps](#maps)
+* [Polymorphism](#polymorphism)
+  * [Static types](#static-types)
+  * [Designing serializable hierarchy](#designing-serializable-hierarchy)
+  * [Sealed classes](#sealed-classes)
+  * [Custom subclass serial name](#custom-subclass-serial-name)
+  * [Open polymorphism](#open-polymorphism)
 * [Custom JSON configuration](#custom-json-configuration)
   * [Pretty printing](#pretty-printing)
   * [Encoding defaults](#encoding-defaults)
@@ -43,6 +49,7 @@
   * [Allowing structured map keys](#allowing-structured-map-keys)
   * [Coercing input values](#coercing-input-values)
   * [Allowing special floating point values](#allowing-special-floating-point-values)
+  * [Class discriminator](#class-discriminator)
 
 <!--- END -->
 
@@ -947,7 +954,225 @@ even if they are numbers in Kotlin, as we can see below:
 
 It is a JSON-specific limitation that keys cannot be composite. 
 It can be lifted as shown in [Allowing structured map keys](#allowing-structured-map-keys) section. 
+
+## Polymorphism
+
+Kotlin Serialization is fully static with respect to types by default. The structure of encoded objects is determined 
+by *compile-time* types of the objects. In this section we'll examine this aspect in more detail and learn how
+to serialize polymorphic data structure, where the type of data is determined at runtime.
+
+<!--- INCLUDE .*-poly-.*
+import kotlinx.serialization.*
+import kotlinx.serialization.json.*
+-->
+
+### Static types
+
+To show the static nature of Kotlin Serialization we'll make the following setup. An `open class Repository`
+has just the `name` property, while its derived `class OwnedRepository` adds an `owner` property.
+When is important in the below example is that we serialize `data` variable with a static type of
+`Repository` that is initialized with an instance of `OwnedRepository` at runtime:
+
+```kotlin
+@Serializable
+open class Repository(val name: String)
+
+class OwnedRepository(name: String, val owner: String) : Repository(name)
+
+fun main() {
+    val data: Repository = OwnedRepository("kotlinx.coroutines", "kotlin")
+    println(Json.encodeToString(data))
+}  
+```                                
+
+> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-01.kt).
+
+Despite the runtime type of `OwnedRepository`, only the `Repository` class properties are getting serialized:  
  
+```text
+{"name":"kotlinx.coroutines"}
+```   
+
+<!--- TEST -->                                                                    
+
+If we change the compile-time type of `data` to `OwnerRepository`:
+
+```kotlin
+@Serializable
+open class Repository(val name: String)
+
+class OwnedRepository(name: String, val owner: String) : Repository(name)
+
+fun main() {
+    val data = OwnedRepository("kotlinx.coroutines", "kotlin")
+    println(Json.encodeToString(data))
+}  
+```                                
+
+> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-02.kt).
+
+We get an error, because `OwnedRepository` class is not serializable:  
+ 
+```text
+Exception in thread "main" kotlinx.serialization.SerializationException: Serializer for class 'OwnedRepository' is not found. Mark the class as @Serializable or provide the serializer explicitly.
+```                                                                       
+
+<!--- TEST LINES_START -->
+
+### Designing serializable hierarchy
+
+We cannot simply mark `OwnedRepository` from the previous example as `@Serializable`. It will not compile, 
+running into the [constructor properties requirement](#constructor-properties-requirement). To make hierarchy 
+of classes serializable, the properties in the parent class have to be marked `abstract`, making the whole
+`Repository` class `abstract`, too. We can also add alternative repository implementations to our example:
+
+```kotlin
+@Serializable
+abstract class Repository {
+    abstract val name: String
+}
+
+class SimpleRepository(override val name: String) : Repository()
+class OwnedRepository(override val name: String, val owner: String) : Repository()
+
+fun main() {
+    val data: Repository = OwnedRepository("kotlinx.coroutines", "kotlin")
+    println(Json.encodeToString(data))
+}  
+```
+
+> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-03.kt).
+
+This is close to the best design for a serializable hierarchy of classes, but running it produces the following error:
+
+```text 
+Exception in thread "main" kotlinx.serialization.SerializationException: Class 'OwnedRepository' is not registered for polymorphic serialization in the scope of 'Repository'.
+Mark the base class as 'sealed' or register serializer explicitly.
+```         
+
+<!--- TEST LINES_START -->
+
+### Sealed classes
+
+The most straightforward way to use serialization with a polymorphic hierarchy is to make the base class `sealed`.
+_All_ subclasses of a sealed class must be explicitly marked as `@Serializable`, too:
+
+```kotlin
+@Serializable
+sealed class Repository {
+    abstract val name: String
+}
+            
+@Serializable
+class OwnedRepository(override val name: String, val owner: String) : Repository()
+
+fun main() {
+    val data: Repository = OwnedRepository("kotlinx.coroutines", "kotlin")
+    println(Json.encodeToString(data))
+}  
+```
+
+> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-04.kt).
+
+Now we can see a default way to represent polymorphism in JSON. A `type` key is added to the resulting JSON object
+as a _discriminator_:  
+
+```text 
+{"type":"example.examplePoly04.OwnedRepository","name":"kotlinx.coroutines","owner":"kotlin"}
+```                  
+
+<!--- TEST -->
+
+### Custom subclass serial name
+
+A value of the `type` key is a fully qualified class name by default. We can put [SerialName] annotation onto 
+the corresponding class to change it:
+ 
+```kotlin
+@Serializable
+sealed class Repository {
+    abstract val name: String
+}
+            
+@Serializable         
+@SerialName("owned")
+class OwnedRepository(override val name: String, val owner: String) : Repository()
+
+fun main() {
+    val data: Repository = OwnedRepository("kotlinx.coroutines", "kotlin")
+    println(Json.encodeToString(data))
+}  
+```
+
+> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-05.kt).
+
+This way we can have a stable _serial name_ that is not affected by the class's name in the source code: 
+
+```text 
+{"type":"owned","name":"kotlinx.coroutines","owner":"kotlin"}
+```                   
+
+<!--- TEST -->
+
+> In addition to that, JSON can be configured to use a different key name for the class discriminator. 
+> You can find an example in the [Class discriminator](#class-discriminator) section.
+
+### Open polymorphism
+
+Serialization can work with arbitrary `open` classes or `abstract` classes. 
+However, since this kind of polymorphism is open with possibility that subclasses are defined anywhere in the 
+source code, even in other modules, the list of subclasses that are serialized should be explicitly configured 
+at runtime. Our example has an `abstract` property, so we define an `abstract` class.
+
+We've seen this code in the [Designing serializable hierarchy](#designing-serializable-hierarchy) section.
+To make it work with serialization we need to define a [SerializersModule] using the 
+[SerializersModule {}][SerializersModule()] builder function. In the module, the base class is specified 
+in the [polymorphic] builder and each subclass is registered with the [subclass] function. Now, 
+a custom JSON configuration can be instantiated with this module and used for serialization.
+
+> Details on custom JSON configurations can be found in 
+> the [Custom JSON configuration](#custom-json-configuration) section. 
+
+<!--- INCLUDE 
+import kotlinx.serialization.modules.*
+--> 
+
+```kotlin 
+val module = SerializersModule {
+    polymorphic(Repository::class) {
+        subclass(OwnedRepository::class)
+    }
+}
+
+val format = Json { serializersModule = module }
+
+@Serializable
+abstract class Repository {
+    abstract val name: String
+}
+            
+@Serializable
+@SerialName("owned")
+class OwnedRepository(override val name: String, val owner: String) : Repository()
+
+fun main() {
+    val data: Repository = OwnedRepository("kotlinx.coroutines", "kotlin")
+    println(format.encodeToString(data))
+}    
+```
+
+> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-06.kt).
+
+
+This additional configuration makes our code work just as it worked with a sealed class in 
+the [Sealed classes](#sealed-classes) section, but here subclasses can be spread arbitrarily throughout the code:
+
+```text 
+{"type":"owned","name":"kotlinx.coroutines","owner":"kotlin"}
+```                  
+
+<!--- TEST -->
+
 ## Custom JSON configuration
 
 By default, [Json] implementation is quite strict with respect to invalid inputs, enforces Kotlin type safety, and
@@ -1165,6 +1390,40 @@ special values in JVM world:
 
 <!--- TEST -->
 
+### Class discriminator
+
+A key name that specifies a type when you have a polymorphic data can be specified 
+with [classDiscriminator][JsonBuilder.classDiscriminator] property. 
+
+```kotlin        
+val format = Json { classDiscriminator = "#class" }
+
+@Serializable
+sealed class Repository {
+    abstract val name: String
+}
+            
+@Serializable         
+@SerialName("owned")
+class OwnedRepository(override val name: String, val owner: String) : Repository()
+
+fun main() {
+    val data: Repository = OwnedRepository("kotlinx.coroutines", "kotlin")
+    println(format.encodeToString(data))
+}  
+```
+
+> You can get the full code [here](../runtime/jvmTest/src/guide/example-json-07.kt).
+
+In combination with an explicitly specified [SerialName] of the class it provides full
+control on the resulting JSON object: 
+
+```text 
+{"#class":"owned","name":"kotlinx.coroutines","owner":"kotlin"}
+```                   
+
+<!--- TEST -->
+
 <!-- stdlib references -->
 [kotlin.jvm.Transient]: https://kotlinlang.org/api/latest/jvm/stdlib/kotlin.jvm/-transient/
 [Double.NaN]: https://kotlinlang.org/api/latest/jvm/stdlib/kotlin/-double/-na-n.html
@@ -1195,5 +1454,11 @@ special values in JVM world:
 [JsonBuilder.allowStructuredMapKeys]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization.json/-json-builder/allow-structured-map-keys.html
 [JsonBuilder.coerceInputValues]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization.json/-json-builder/coerce-input-values.html
 [JsonBuilder.allowSpecialFloatingPointValues]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization.json/-json-builder/allow-special-floating-point-values.html
+[JsonBuilder.classDiscriminator]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization.json/-json-builder/class-discriminator.html
+<!--- INDEX kotlinx.serialization.modules -->
+[SerializersModule]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization.modules/-serializers-module/index.html
+[SerializersModule()]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization.modules/-serializers-module.html
+[polymorphic]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization.modules/polymorphic.html
+[subclass]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization.modules/subclass.html
 <!--- END -->
 

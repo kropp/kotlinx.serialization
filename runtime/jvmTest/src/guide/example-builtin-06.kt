@@ -1,5 +1,5 @@
 // This file was automatically generated from serialization-guide.md by Knit tool. Do not edit.
-package kotlinx.serialization.example.exampleBuiltin06
+package example.exampleBuiltin06
 
 import kotlinx.serialization.*
 import kotlinx.serialization.json.*
