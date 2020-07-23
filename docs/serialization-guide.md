@@ -42,6 +42,7 @@
   * [Sealed classes](#sealed-classes)
   * [Custom subclass serial name](#custom-subclass-serial-name)
   * [Concrete properties in a base class](#concrete-properties-in-a-base-class)
+  * [Objects](#objects)
   * [Open polymorphism](#open-polymorphism)
   * [Serializing interfaces](#serializing-interfaces)
   * [Property of an interface type](#property-of-an-interface-type)
@@ -1151,12 +1152,49 @@ The properties on a super class are serialized before the properties of the subc
 
 <!--- TEST -->
 
+### Objects
+
+Sealed hierarchies can have objects as their subclasses and they also need to be marked as `@Serializable`.
+Let's take a different example with a hierarchy of `Response` classes:
+
+```kotlin
+@Serializable
+sealed class Response
+                      
+@Serializable
+object EmptyResponse : Response()
+
+@Serializable   
+class TextResponse(val text: String) : Response()   
+```
+
+We'll serialize a list of different response:
+
+```kotlin
+fun main() {
+    val list = listOf(EmptyResponse, TextResponse("OK"))
+    println(Json.encodeToString(list))
+}  
+```
+
+> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-07.kt).
+
+An object serializes as an empty class, also using its fully-qualified class name as type by default:
+
+```text 
+[{"type":"example.examplePoly07.EmptyResponse"},{"type":"example.examplePoly07.TextResponse","text":"OK"}]
+```                            
+
+<!--- TEST -->
+
+> Even if object has properties, they are not serialized. 
+
 ### Open polymorphism
 
 Serialization can work with arbitrary `open` classes or `abstract` classes. 
-However, since this kind of polymorphism is open with possibility that subclasses are defined anywhere in the 
-source code, even in other modules, the list of subclasses that are serialized should be explicitly configured 
-at runtime. Our example has an `abstract` property, so we define an `abstract` class.
+However, since this kind of polymorphism is open, there is a possibility that subclasses are defined anywhere in the 
+source code, even in other modules, the list of subclasses that are serialized cannot be determined at compile-time and
+should be explicitly configured at runtime. Our example has an `abstract` property, so we define an `abstract` class.
 
 We've seen this code in the [Designing serializable hierarchy](#designing-serializable-hierarchy) section.
 To make it work with serialization we need to define a [SerializersModule] using the 
@@ -1195,7 +1233,7 @@ fun main() {
 }    
 ```
 
-> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-07.kt).
+> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-08.kt).
 
 This additional configuration makes our code work just as it worked with a sealed class in 
 the [Sealed classes](#sealed-classes) section, but here subclasses can be spread arbitrarily throughout the code:
@@ -1242,7 +1280,7 @@ fun main() {
 }    
 ```
 
-> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-08.kt).
+> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-09.kt).
 
 Then we get an exception that `Repository` is not serializable:
 
@@ -1284,7 +1322,7 @@ fun main() {
 }    
 ```
 
-> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-09.kt).
+> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-10.kt).
 
 Now it works:
 
@@ -1336,7 +1374,7 @@ fun main() {
 }    
 ```
 
-> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-10.kt).
+> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-11.kt).
  
 We'll get an exception:
 
@@ -1383,7 +1421,7 @@ fun main() {
 }    
 ```
 
-> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-11.kt).
+> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-12.kt).
 
 However, the `Any` class not serializable:
 
@@ -1424,7 +1462,7 @@ fun main() {
 }    
 ```
 
-> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-12.kt).
+> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-13.kt).
 
 Then it works as before:
 

@@ -14,13 +14,14 @@ val module = SerializersModule {
 
 val format = Json { serializersModule = module }
 
-interface Repository {
-    val name: String
+@Serializable
+abstract class Repository {
+    abstract val name: String
 }
-
+            
 @Serializable
 @SerialName("owned")
-class OwnedRepository(override val name: String, val owner: String) : Repository
+class OwnedRepository(override val name: String, val owner: String) : Repository()
 
 fun main() {
     val data: Repository = OwnedRepository("kotlinx.coroutines", "kotlin")

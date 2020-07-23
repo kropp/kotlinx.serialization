@@ -243,28 +243,28 @@ class GuideTest {
     @Test
     fun testExamplePoly07() {
         captureOutput("ExamplePoly07") { example.examplePoly07.main() }.verifyOutputLines(
-            "{\"type\":\"owned\",\"name\":\"kotlinx.coroutines\",\"owner\":\"kotlin\"}"
+            "[{\"type\":\"example.examplePoly07.EmptyResponse\"},{\"type\":\"example.examplePoly07.TextResponse\",\"text\":\"OK\"}]"
         )
     }
 
     @Test
     fun testExamplePoly08() {
-        captureOutput("ExamplePoly08") { example.examplePoly08.main() }.verifyOutputLinesStart(
-            "Exception in thread \"main\" kotlinx.serialization.SerializationException: Serializer for class 'Repository' is not found. Mark the class as @Serializable or provide the serializer explicitly."
-        )
-    }
-
-    @Test
-    fun testExamplePoly09() {
-        captureOutput("ExamplePoly09") { example.examplePoly09.main() }.verifyOutputLines(
+        captureOutput("ExamplePoly08") { example.examplePoly08.main() }.verifyOutputLines(
             "{\"type\":\"owned\",\"name\":\"kotlinx.coroutines\",\"owner\":\"kotlin\"}"
         )
     }
 
     @Test
+    fun testExamplePoly09() {
+        captureOutput("ExamplePoly09") { example.examplePoly09.main() }.verifyOutputLinesStart(
+            "Exception in thread \"main\" kotlinx.serialization.SerializationException: Serializer for class 'Repository' is not found. Mark the class as @Serializable or provide the serializer explicitly."
+        )
+    }
+
+    @Test
     fun testExamplePoly10() {
-        captureOutput("ExamplePoly10") { example.examplePoly10.main() }.verifyOutputLinesStart(
-            "Exception in thread \"main\" kotlinx.serialization.SerializationException: Serializer for class 'Any' is not found. Mark the class as @Serializable or provide the serializer explicitly."
+        captureOutput("ExamplePoly10") { example.examplePoly10.main() }.verifyOutputLines(
+            "{\"type\":\"owned\",\"name\":\"kotlinx.coroutines\",\"owner\":\"kotlin\"}"
         )
     }
 
@@ -277,7 +277,14 @@ class GuideTest {
 
     @Test
     fun testExamplePoly12() {
-        captureOutput("ExamplePoly12") { example.examplePoly12.main() }.verifyOutputLines(
+        captureOutput("ExamplePoly12") { example.examplePoly12.main() }.verifyOutputLinesStart(
+            "Exception in thread \"main\" kotlinx.serialization.SerializationException: Serializer for class 'Any' is not found. Mark the class as @Serializable or provide the serializer explicitly."
+        )
+    }
+
+    @Test
+    fun testExamplePoly13() {
+        captureOutput("ExamplePoly13") { example.examplePoly13.main() }.verifyOutputLines(
             "{\"type\":\"owned\",\"name\":\"kotlinx.coroutines\",\"owner\":\"kotlin\"}"
         )
     }

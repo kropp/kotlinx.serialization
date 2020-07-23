@@ -4,26 +4,16 @@ package example.examplePoly07
 import kotlinx.serialization.*
 import kotlinx.serialization.json.*
 
-import kotlinx.serialization.modules.*
-
-val module = SerializersModule {
-    polymorphic(Repository::class) {
-        subclass(OwnedRepository::class)
-    }
-}
-
-val format = Json { serializersModule = module }
-
 @Serializable
-abstract class Repository {
-    abstract val name: String
-}
-            
+sealed class Response
+                      
 @Serializable
-@SerialName("owned")
-class OwnedRepository(override val name: String, val owner: String) : Repository()
+object EmptyResponse : Response()
+
+@Serializable   
+class TextResponse(val text: String) : Response()   
 
 fun main() {
-    val data: Repository = OwnedRepository("kotlinx.coroutines", "kotlin")
-    println(format.encodeToString(data))
-}    
+    val list = listOf(EmptyResponse, TextResponse("OK"))
+    println(Json.encodeToString(list))
+}  
