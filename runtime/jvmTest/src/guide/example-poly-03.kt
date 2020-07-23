@@ -9,7 +9,6 @@ abstract class Repository {
     abstract val name: String
 }
 
-class SimpleRepository(override val name: String) : Repository()
 class OwnedRepository(override val name: String, val owner: String) : Repository()
 
 fun main() {

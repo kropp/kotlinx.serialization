@@ -41,6 +41,7 @@
   * [Designing serializable hierarchy](#designing-serializable-hierarchy)
   * [Sealed classes](#sealed-classes)
   * [Custom subclass serial name](#custom-subclass-serial-name)
+  * [Concrete properties in a base class](#concrete-properties-in-a-base-class)
   * [Open polymorphism](#open-polymorphism)
   * [Serializing interfaces](#serializing-interfaces)
   * [Property of an interface type](#property-of-an-interface-type)
@@ -1027,7 +1028,7 @@ Exception in thread "main" kotlinx.serialization.SerializationException: Seriali
 We cannot simply mark `OwnedRepository` from the previous example as `@Serializable`. It will not compile, 
 running into the [constructor properties requirement](#constructor-properties-requirement). To make hierarchy 
 of classes serializable, the properties in the parent class have to be marked `abstract`, making the whole
-`Repository` class `abstract`, too. We can also add alternative repository implementations to our example:
+`Repository` class `abstract`, too. 
 
 ```kotlin
 @Serializable
@@ -1035,7 +1036,6 @@ abstract class Repository {
     abstract val name: String
 }
 
-class SimpleRepository(override val name: String) : Repository()
 class OwnedRepository(override val name: String, val owner: String) : Repository()
 
 fun main() {
@@ -1058,7 +1058,7 @@ Mark the base class as 'sealed' or register serializer explicitly.
 ### Sealed classes
 
 The most straightforward way to use serialization with a polymorphic hierarchy is to make the base class `sealed`.
-_All_ subclasses of a sealed class must be explicitly marked as `@Serializable`, too:
+_All_ subclasses of a sealed class must be explicitly marked as `@Serializable`:
 
 ```kotlin
 @Serializable
@@ -1120,6 +1120,37 @@ This way we can have a stable _serial name_ that is not affected by the class's 
 > In addition to that, JSON can be configured to use a different key name for the class discriminator. 
 > You can find an example in the [Class discriminator](#class-discriminator) section.
 
+### Concrete properties in a base class
+
+A base class in a sealed hierarchy can have properties with backing fields: 
+
+```kotlin
+@Serializable
+sealed class Repository {
+    abstract val name: String   
+    var status = "open"
+}
+            
+@Serializable   
+@SerialName("owned")
+class OwnedRepository(override val name: String, val owner: String) : Repository()
+
+fun main() {
+    val data: Repository = OwnedRepository("kotlinx.coroutines", "kotlin")
+    println(Json.encodeToString(data))
+}  
+```
+
+> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-06.kt).
+
+The properties on a super class are serialized before the properties of the subclass: 
+
+```text 
+{"type":"owned","status":"open",name":"kotlinx.coroutines","owner":"kotlin"}
+```                                                                                  
+
+<!--- TEST -->
+
 ### Open polymorphism
 
 Serialization can work with arbitrary `open` classes or `abstract` classes. 
@@ -1164,7 +1195,7 @@ fun main() {
 }    
 ```
 
-> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-06.kt).
+> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-07.kt).
 
 This additional configuration makes our code work just as it worked with a sealed class in 
 the [Sealed classes](#sealed-classes) section, but here subclasses can be spread arbitrarily throughout the code:
@@ -1211,7 +1242,7 @@ fun main() {
 }    
 ```
 
-> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-07.kt).
+> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-08.kt).
 
 Then we get an exception that `Repository` is not serializable:
 
@@ -1253,7 +1284,7 @@ fun main() {
 }    
 ```
 
-> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-08.kt).
+> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-09.kt).
 
 Now it works:
 
@@ -1305,7 +1336,7 @@ fun main() {
 }    
 ```
 
-> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-09.kt).
+> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-10.kt).
  
 We'll get an exception:
 
@@ -1352,7 +1383,7 @@ fun main() {
 }    
 ```
 
-> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-10.kt).
+> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-11.kt).
 
 However, the `Any` class not serializable:
 
@@ -1393,7 +1424,7 @@ fun main() {
 }    
 ```
 
-> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-11.kt).
+> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-12.kt).
 
 Then it works as before:
 

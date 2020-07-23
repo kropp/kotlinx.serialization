@@ -11,7 +11,6 @@ val module = SerializersModule {
         subclass(OwnedRepository::class)
     }
 }
-
 val format = Json { serializersModule = module }
 
 @Serializable
@@ -25,5 +24,5 @@ class OwnedRepository(override val name: String, val owner: String) : Repository
 
 fun main() {
     val data: Any = OwnedRepository("kotlinx.coroutines", "kotlin")
-    println(format.encodeToString(PolymorphicSerializer(Any::class), data))
+    println(format.encodeToString(data))
 }    

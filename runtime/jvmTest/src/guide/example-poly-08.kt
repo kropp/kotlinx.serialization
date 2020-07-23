@@ -24,5 +24,5 @@ class OwnedRepository(override val name: String, val owner: String) : Repository
 
 fun main() {
     val data: Repository = OwnedRepository("kotlinx.coroutines", "kotlin")
-    println(format.encodeToString(PolymorphicSerializer(Repository::class), data))
+    println(format.encodeToString(data))
 }    

@@ -7,10 +7,11 @@ import kotlinx.serialization.json.*
 import kotlinx.serialization.modules.*
 
 val module = SerializersModule {
-    polymorphic(Any::class) {
+    polymorphic(Repository::class) {
         subclass(OwnedRepository::class)
     }
 }
+
 val format = Json { serializersModule = module }
 
 @Serializable
