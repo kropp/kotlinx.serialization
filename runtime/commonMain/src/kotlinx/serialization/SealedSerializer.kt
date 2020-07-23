@@ -93,11 +93,25 @@ internal class SealedClassSerializer<T : Any>(
     private val serialName2Serializer: Map<String, KSerializer<out T>>
 
     init {
-        require(subclasses.size == subclassSerializers.size) {
-            "Arrays of classes and serializers must have the same length," +
-                    " got arrays: ${subclasses.contentToString()}, ${subclassSerializers.contentToString()}\n" +
-                    "Please ensure that @Serializable annotation is present on each sealed subclass"
+
+        if (subclasses.size != subclassSerializers.size) {
+            // Remove prefix is required for JVM to trim "class " from KClass.toString
+            val allClasses = subclasses.map { it.toString().substringAfter("class ") }
+            val withSerializers = subclassSerializers.map { it.toString().substringBeforeLast("$$") }
+            val diff = allClasses - withSerializers
+            val bc = baseClass.toString().removePrefix("class ")
+            // Verify that we correctly guessed toString, then show the hint
+            if (allClasses.size == withSerializers.size + diff.size) {
+                throw IllegalArgumentException(
+                    "All subclasses of sealed class $bc should be marked @Serializable.\n" +
+                            "Not marked with @Serializable: $diff"
+                )
+            } else {
+                // Probably we are on JS or custom serializers are used, don't show anything
+                throw IllegalArgumentException("All subclasses of sealed class $bc should be marked @Serializable")
+            }
         }
+
         class2Serializer = subclasses.zip(subclassSerializers).toMap()
         serialName2Serializer = class2Serializer.entries.groupingBy { it.value.descriptor.serialName }
             .aggregate<Map.Entry<KClass<out T>, KSerializer<out T>>, String, Map.Entry<KClass<*>, KSerializer<out T>>>
