@@ -36,6 +36,10 @@
   * [Sets and other collections](#sets-and-other-collections)
   * [Deserializing collections](#deserializing-collections)
   * [Maps](#maps)
+* [Serializers](#serializers)
+  * [Primitive serializer](#primitive-serializer)
+  * [Composite serializer via surrogate](#composite-serializer-via-surrogate)
+  * [Hand-written composite serializer](#hand-written-composite-serializer)
 * [Polymorphism](#polymorphism)
   * [Static types](#static-types)
   * [Designing serializable hierarchy](#designing-serializable-hierarchy)
@@ -47,7 +51,7 @@
   * [Serializing interfaces](#serializing-interfaces)
   * [Property of an interface type](#property-of-an-interface-type)
   * [Static parent type lookup for polymorphism](#static-parent-type-lookup-for-polymorphism)
-* [Custom JSON configuration](#custom-json-configuration)
+* [JSON configuration](#json-configuration)
   * [Pretty printing](#pretty-printing)
   * [Encoding defaults](#encoding-defaults)
   * [Ignoring unknown keys](#ignoring-unknown-keys)
@@ -113,7 +117,8 @@ fun main() {
 When we run this code we get the following exception:
 
 ```text 
-Exception in thread "main" kotlinx.serialization.SerializationException: Serializer for class 'Repository' is not found. Mark the class as @Serializable or provide the serializer explicitly.
+Exception in thread "main" kotlinx.serialization.SerializationException: Serializer for class 'Repository' is not found.
+Mark the class as @Serializable or provide the serializer explicitly.
 ```
 
 <!--- TEST LINES_START -->
@@ -960,6 +965,367 @@ even if they are numbers in Kotlin, as we can see below:
 It is a JSON-specific limitation that keys cannot be composite. 
 It can be lifted as shown in [Allowing structured map keys](#allowing-structured-map-keys) section. 
 
+## Serializers
+
+Format, like JSON, controls _encoding_ of object into specific output bytes, but how the object is decomposed 
+into its constituent properties is controlled by a _serializer_. So far, we've been using automatically-derived
+serializers using [Serializable] annotation that were covered in 
+the [Serializable classes](#serializable-classes) section or builtin serializers that were covered in 
+the [Builtin classes](#builtin-classes) section.
+
+In this section we'll take a look at serializers in more detail and see how custom serializers can be written.
+As a motivating example, we'll take the following `Color` class with an integer value storing its `rgb` bytes.
+
+<!--- INCLUDE
+import kotlinx.serialization.*
+import kotlinx.serialization.json.*
+-->
+
+```kotlin
+@Serializable
+class Color(val rgb: Int)
+
+fun main() {
+    val green = Color(0x00ff00)
+    println(Json.encodeToString(green))
+}  
+```              
+
+> You can get the full code [here](../runtime/jvmTest/src/guide/example-serializer-01.kt).
+
+By default, this class serializes its `rgb` property into JSON:
+
+```text
+{"rgb":65280}
+```     
+
+<!--- TEST -->
+
+This may not be exactly what we want to see in JSON for such a class, so let's study alternatives.
+
+### Primitive serializer
+
+We want to serialize `Color` class as hex string with green color represented as `"00ff00"`.
+We write an object that implements [KSerializer] interface for `Color` class:
+
+<!--- INCLUDE .*-serializer-.*
+import kotlinx.serialization.*
+import kotlinx.serialization.json.*
+import kotlinx.serialization.encoding.*
+import kotlinx.serialization.descriptors.*
+-->
+
+```kotlin
+object ColorAsStringSerializer : KSerializer<Color> {
+    override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("Color", PrimitiveKind.STRING)
+
+    override fun serialize(encoder: Encoder, value: Color) {
+        val string = value.rgb.toString(16).padStart(6, '0')
+        encoder.encodeString(string)
+    }
+
+    override fun deserialize(decoder: Decoder): Color {
+        val string = decoder.decodeString()
+        return Color(string.toInt(16))
+    }
+}
+```
+
+Serializer has three required pieces. 
+
+* The [serialize][SerializationStrategy.serialize] function receives an instance of [Encoder] and a value to serialize.
+  It uses `encodeXxx` functions of `Encoder` to represent a value. There is an `encodeXxx` for each primitive
+  type supported by serialization. In our example [encodeString][Encoder.encodeString] is used.
+  
+* The [deserialize][DeserializationStrategy.deserialize] function receives an instance of [Decoder] and returns a 
+  deserialized value. It uses `decodeXxx` functions of `Decoder` that mirror the corresponding functions of `Encoder`.
+  In our example [decodeString][Decoder.decodeString] is used.
+  
+* The [descriptor][KSerializer.descriptor] property must faithfully explain what exactly `encodeXxx` and `decodeXxx` 
+  functions do, so that a format implementation knows in advance what encoding/decoding methods they call. 
+  Some formats might also use it to generate a schema of the serialized data. For primitive serialization 
+  the [PrimitiveSerialDescriptor][PrimitiveSerialDescriptor()] function must be used with a unique name of the 
+  type that is being serialized.
+  [PrimitiveKind] describes the specific `encodeXxx`/`decodeXxx` method that is being used in implementation.
+  
+> When the `descriptor` does not corresponding to the encoding/decoding methods, then the behavior of the resulting code
+> is unspecified and may arbitrary change in futures updates.        
+  
+The next step is to bind serializer to a class. This is done with the [Serializable] annotation by adding
+its [`with`][Serializable.with property value:
+
+```kotlin
+@Serializable(with = ColorAsStringSerializer::class)
+class Color(val rgb: Int)
+```  
+
+Now we can serialize `Color` class as before:
+
+```kotlin
+fun main() {
+    val green = Color(0x00ff00)
+    println(Json.encodeToString(green))
+}  
+```              
+
+> You can get the full code [here](../runtime/jvmTest/src/guide/example-serializer-02.kt).
+
+We get representation we wanted:
+
+```text
+"00ff00"
+```                        
+
+<!--- TEST -->    
+
+Deserialization is also straightforward, because we implemented `deserialize` method:
+
+<!--- INCLUDE 
+object ColorAsStringSerializer : KSerializer<Color> {
+    override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("Color", PrimitiveKind.STRING)
+
+    override fun serialize(encoder: Encoder, value: Color) {
+        val string = value.rgb.toString(16).padStart(6, '0')
+        encoder.encodeString(string)
+    }
+
+    override fun deserialize(decoder: Decoder): Color {
+        val string = decoder.decodeString()
+        return Color(string.toInt(16))
+    }
+}
+-->
+
+```kotlin
+@Serializable(with = ColorAsStringSerializer::class)
+class Color(val rgb: Int)
+
+fun main() {
+    val color = Json.decodeFromString<Color>("\"00ff00\"")
+    println(color.rgb) // prints 65280 
+}  
+```     
+
+> You can get the full code [here](../runtime/jvmTest/src/guide/example-serializer-03.kt).
+
+<!--- TEST 
+65280
+-->
+
+It also works if we serialize a different class with `Color` properties:
+
+<!--- INCLUDE 
+object ColorAsStringSerializer : KSerializer<Color> {
+    override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("Color", PrimitiveKind.STRING)
+
+    override fun serialize(encoder: Encoder, value: Color) {
+        val string = value.rgb.toString(16).padStart(6, '0')
+        encoder.encodeString(string)
+    }
+
+    override fun deserialize(decoder: Decoder): Color {
+        val string = decoder.decodeString()
+        return Color(string.toInt(16))
+    }
+}
+-->
+
+```kotlin
+@Serializable(with = ColorAsStringSerializer::class)
+class Color(val rgb: Int)
+
+@Serializable 
+class Settings(val background: Color, val foreground: Color)
+
+fun main() {
+    val data = Settings(Color(0xfffffff), Color(0))
+    println(Json.encodeToString(data))
+}  
+```     
+
+> You can get the full code [here](../runtime/jvmTest/src/guide/example-serializer-04.kt).
+
+These properties are serialized as strings:
+
+```text 
+{"background":"fffffff","foreground":"000000"}
+```
+
+<!--- TEST -->
+
+### Composite serializer via surrogate
+
+Now our challenge is to get `Color` serialized so that it is represented in JSON as if it is a class 
+with three properties: `r`, `g`, and `b`, so that JSON encodes it as object. 
+The easiest way is to define a _surrogate_ class mimics the serialized form of the `Color` and that
+is going to be used for serialization. We'll also set [SerialName] of this class to `Color`, so
+that if a formats uses this name, it looks like it is a `Color` class.
+The surrogate class can be `private` and can enforce all the constraints on the serial representation 
+of the class in its `init` block.
+
+```kotlin
+@Serializable
+@SerialName("Color")
+private class ColorSurrogate(val r: Int, val g: Int, val b: Int) {
+    init {     
+        require(r in 0..255 && g in 0..255 && b in 0..255)
+    }
+}
+```
+
+> An example of where the class name is used is show in 
+> the [Custom subclass serial name](#custom-subclass-serial-name) section on polymorphism.
+  
+Now we can use a [serializer] function to retrieve an automatically-generated serializer for the
+surrogate class:
+
+```kotlin
+private val surrogateSerializer = serializer<ColorSurrogate>()
+```                                                           
+
+An implementation of [KSerializer] for our original `Color` class is going to perform conversion between
+`Color` and `ColorSurrogate`, but delegate the actual serialization logic to the `surrogateSerializer`
+using [encodeSerializableValue][Encoder.encodeSerializableValue] and
+[decodeSerializableValue][Decoder.decodeSerializableValue], fully reusing an automatically
+generated [SerialDescriptor] for the surrogate.
+
+```kotlin
+object ColorSerializer : KSerializer<Color> {
+    override val descriptor: SerialDescriptor = surrogateSerializer.descriptor
+
+    override fun serialize(encoder: Encoder, value: Color) {
+        val surrogate = ColorSurrogate((value.rgb shr 16) and 0xff, (value.rgb shr 8) and 0xff, value.rgb and 0xff)
+        encoder.encodeSerializableValue(surrogateSerializer, surrogate)
+    }
+
+    override fun deserialize(decoder: Decoder): Color {
+        val surrogate = decoder.decodeSerializableValue(surrogateSerializer)
+        return Color((surrogate.r shl 16) or (surrogate.g shl 8) or surrogate.b)
+    }
+}
+```
+ 
+Bind `ColorSerializer` serializer to a `Color` class:
+
+```kotlin
+@Serializable(with = ColorSerializer::class)
+class Color(val rgb: Int)
+```  
+
+Now we can enjoy the result of serialization of the `Color` class:
+
+<!--- INCLUDE
+fun main() {
+    val green = Color(0x00ff00)
+    println(Json.encodeToString(green))
+}
+-->
+
+> You can get the full code [here](../runtime/jvmTest/src/guide/example-serializer-05.kt).
+
+```text
+{"r":0,"g":255,"b":0}
+```                        
+
+<!--- TEST -->    
+
+### Hand-written composite serializer
+
+There are some cases where a surrogate solution does not fit, either due to performance reasons
+of avoiding additional allocation or where a flexible, configurable, or dynamic set of properties of
+the resulting serial representation is required. In this case we need to manually write a class
+serializer that mimics the behavior of a serializer that is generated for a class. 
+
+```kotlin 
+object ColorAsObjectSerializer : KSerializer<Color> {
+```
+
+Let's introduce it piece by piece. First, a descriptor is defined using [buildClassSerialDescriptor] builder.
+The [element][ClassSerialDescriptorBuilder.element] function in the builder DSL automatically fetches serializers
+for the corresponding fields by their type. The order of elements is important. They are indexed starting from zero.
+
+```kotlin
+    override val descriptor: SerialDescriptor =
+        buildClassSerialDescriptor("Color") {
+            element<Int>("r")
+            element<Int>("g")
+            element<Int>("b")
+        }
+```                                                                        
+
+> The "element" is a generic term here. What is an element of a descriptor depends of its [SerialKind]. 
+> Elements of a class descriptor are its properties, elements of a enum descriptor are its cases, etc.
+
+Then we write the `serialize` function using [encodeStructure] DSL that provides access to 
+the [CompositeEncoder] in its block. The difference between [Encoder] and [CompositeEncoder] is that the latter
+has `encodeXxxElement` functions that correspond to `encodeXxx` functions of the former. They must be called
+in the same order as in the descriptor. 
+
+```kotlin
+    override fun serialize(encoder: Encoder, value: Color) =
+        encoder.encodeStructure(descriptor) {
+            encodeIntElement(descriptor, 0, (value.rgb shr 16) and 0xff)
+            encodeIntElement(descriptor, 1, (value.rgb shr 8) and 0xff)
+            encodeIntElement(descriptor, 2, value.rgb and 0xff)
+        }
+```                                     
+
+The most complex piece of code is the `deserialize` function. It shall support formats, like JSON, that 
+can decode properties in an arbitrary order. It starts with the call to [decodeStructure] to 
+get access to a [CompositeDecoder]. Inside of it we write a loop that repatedly calls 
+[decodeElementIndex][CompositeDecoder.decodeElementIndex] to decode the index of the next element, decode the corresponding
+element using [decodeIntElement][CompositeDecoder.decodeIntElement] in our example, and terminate a loop when
+`CompositeDecoder.DECODE_DONE` is encountered.
+
+```kotlin
+    override fun deserialize(decoder: Decoder): Color =
+        decoder.decodeStructure(descriptor) {
+            var r = -1
+            var g = -1
+            var b = -1
+            while(true) {
+                when (val index = decodeElementIndex(descriptor)) {
+                    0 -> r = decodeIntElement(descriptor, 0)
+                    1 -> g = decodeIntElement(descriptor, 1)
+                    2 -> b = decodeIntElement(descriptor, 2)
+                    CompositeDecoder.DECODE_DONE -> break
+                    else -> error("Unexpected index: $index")
+                }
+            }
+            require(r in 0..255 && g in 0..255 && b in 0..255)
+            Color((r shl 16) or (g shl 8) or b)
+        }
+```
+
+<!--- INCLUDE
+}
+-->
+
+  
+Bind the resulting serializer to the `Color` class and test its serialization/deserialization:
+
+```kotlin   
+@Serializable(with = ColorAsObjectSerializer::class)
+data class Color(val rgb: Int)
+
+fun main() {
+    val color = Color(0x00ff00)
+    val string = Json.encodeToString(color) 
+    println(string)
+    require(Json.decodeFromString<Color>(string) == color)
+}  
+```              
+
+> You can get the full code [here](../runtime/jvmTest/src/guide/example-serializer-06.kt).
+
+As before, we got the `Color` class represented as a JSON object with three keys:
+
+```text
+{"r":0,"g":255,"b":0}
+```                        
+
+<!--- TEST -->    
+
 ## Polymorphism
 
 Kotlin Serialization is fully static with respect to types by default. The structure of encoded objects is determined 
@@ -1019,7 +1385,8 @@ fun main() {
 We get an error, because `OwnedRepository` class is not serializable:  
  
 ```text
-Exception in thread "main" kotlinx.serialization.SerializationException: Serializer for class 'OwnedRepository' is not found. Mark the class as @Serializable or provide the serializer explicitly.
+Exception in thread "main" kotlinx.serialization.SerializationException: Serializer for class 'OwnedRepository' is not found.
+Mark the class as @Serializable or provide the serializer explicitly.
 ```                                                                       
 
 <!--- TEST LINES_START -->
@@ -1147,7 +1514,7 @@ fun main() {
 The properties on a super class are serialized before the properties of the subclass: 
 
 ```text 
-{"type":"owned","status":"open",name":"kotlinx.coroutines","owner":"kotlin"}
+{"type":"owned","status":"open","name":"kotlinx.coroutines","owner":"kotlin"}
 ```                                                                                  
 
 <!--- TEST -->
@@ -1203,7 +1570,7 @@ in the [polymorphic] builder and each subclass is registered with the [subclass]
 a custom JSON configuration can be instantiated with this module and used for serialization.
 
 > Details on custom JSON configurations can be found in 
-> the [Custom JSON configuration](#custom-json-configuration) section. 
+> the [JSON configuration](#json-configuration) section. 
 
 <!--- INCLUDE 
 import kotlinx.serialization.modules.*
@@ -1285,7 +1652,8 @@ fun main() {
 Then we get an exception that `Repository` is not serializable:
 
 ```text 
-Exception in thread "main" kotlinx.serialization.SerializationException: Serializer for class 'Repository' is not found. Mark the class as @Serializable or provide the serializer explicitly.
+Exception in thread "main" kotlinx.serialization.SerializationException: Serializer for class 'Repository' is not found.
+Mark the class as @Serializable or provide the serializer explicitly.
 ```
 
 <!--- TEST LINES_START -->
@@ -1379,7 +1747,8 @@ fun main() {
 We'll get an exception:
 
 ```text
-Exception in thread "main" kotlinx.serialization.SerializationException: Serializer for class 'Any' is not found. Mark the class as @Serializable or provide the serializer explicitly.
+Exception in thread "main" kotlinx.serialization.SerializationException: Serializer for class 'Any' is not found.
+Mark the class as @Serializable or provide the serializer explicitly.
 ```
 
 <!--- TEST LINES_START -->
@@ -1423,10 +1792,11 @@ fun main() {
 
 > You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-12.kt).
 
-However, the `Any` class not serializable:
+However, the `Any` class is not serializable:
 
 ```text 
-Exception in thread "main" kotlinx.serialization.SerializationException: Serializer for class 'Any' is not found. Mark the class as @Serializable or provide the serializer explicitly.
+Exception in thread "main" kotlinx.serialization.SerializationException: Serializer for class 'Any' is not found.
+Mark the class as @Serializable or provide the serializer explicitly.
 ```
 
 <!--- TEST LINES_START -->
@@ -1472,7 +1842,7 @@ Then it works as before:
 
 <!--- TEST -->
 
-## Custom JSON configuration
+## JSON configuration
 
 By default, [Json] implementation is quite strict with respect to invalid inputs, enforces Kotlin type safety, and
 restricts Kotlin values that can be serialized so that the resulting JSON representations are standard.
@@ -1739,6 +2109,11 @@ control on the resulting JSON object:
 [Required]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization/-required/index.html
 [Transient]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization/-transient/index.html
 [SerialName]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization/-serial-name/index.html
+[KSerializer]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization/-k-serializer/index.html
+[SerializationStrategy.serialize]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization/-serialization-strategy/serialize.html
+[DeserializationStrategy.deserialize]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization/-deserialization-strategy/deserialize.html
+[KSerializer.descriptor]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization/-k-serializer/descriptor.html
+[serializer]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization/serializer.html
 [PolymorphicSerializer]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization/-polymorphic-serializer/index.html
 <!--- INDEX kotlinx.serialization.builtins -->
 [LongAsStringSerializer]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization.builtins/-long-as-string-serializer/index.html
@@ -1755,6 +2130,26 @@ control on the resulting JSON object:
 [JsonBuilder.coerceInputValues]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization.json/-json-builder/coerce-input-values.html
 [JsonBuilder.allowSpecialFloatingPointValues]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization.json/-json-builder/allow-special-floating-point-values.html
 [JsonBuilder.classDiscriminator]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization.json/-json-builder/class-discriminator.html
+<!--- INDEX kotlinx.serialization.encoding -->
+[Encoder]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization.encoding/-encoder/index.html
+[Encoder.encodeString]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization.encoding/-encoder/encode-string.html
+[Decoder]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization.encoding/-decoder/index.html
+[Decoder.decodeString]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization.encoding/-decoder/decode-string.html
+[Encoder.encodeSerializableValue]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization.encoding/-encoder/encode-serializable-value.html
+[Decoder.decodeSerializableValue]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization.encoding/-decoder/decode-serializable-value.html
+[encodeStructure]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization.encoding/encode-structure.html
+[CompositeEncoder]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization.encoding/-composite-encoder/index.html
+[decodeStructure]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization.encoding/decode-structure.html
+[CompositeDecoder]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization.encoding/-composite-decoder/index.html
+[CompositeDecoder.decodeElementIndex]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization.encoding/-composite-decoder/decode-element-index.html
+[CompositeDecoder.decodeIntElement]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization.encoding/-composite-decoder/decode-int-element.html
+<!--- INDEX kotlinx.serialization.descriptors -->
+[PrimitiveSerialDescriptor()]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization.descriptors/-primitive-serial-descriptor.html
+[PrimitiveKind]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization.descriptors/-primitive-kind/index.html
+[SerialDescriptor]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization.descriptors/-serial-descriptor/index.html
+[buildClassSerialDescriptor]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization.descriptors/build-class-serial-descriptor.html
+[ClassSerialDescriptorBuilder.element]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization.descriptors/-class-serial-descriptor-builder/element.html
+[SerialKind]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization.descriptors/-serial-kind/index.html
 <!--- INDEX kotlinx.serialization.modules -->
 [SerializersModule]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization.modules/-serializers-module/index.html
 [SerializersModule()]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization.modules/-serializers-module.html

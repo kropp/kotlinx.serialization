@@ -8,7 +8,8 @@ class GuideTest {
     @Test
     fun testExampleBasic01() {
         captureOutput("ExampleBasic01") { example.exampleBasic01.main() }.verifyOutputLinesStart(
-            "Exception in thread \"main\" kotlinx.serialization.SerializationException: Serializer for class 'Repository' is not found. Mark the class as @Serializable or provide the serializer explicitly."
+            "Exception in thread \"main\" kotlinx.serialization.SerializationException: Serializer for class 'Repository' is not found.",
+            "Mark the class as @Serializable or provide the serializer explicitly."
         )
     }
 
@@ -198,6 +199,48 @@ class GuideTest {
     }
 
     @Test
+    fun testExampleSerializer01() {
+        captureOutput("ExampleSerializer01") { example.exampleSerializer01.main() }.verifyOutputLines(
+            "{\"rgb\":65280}"
+        )
+    }
+
+    @Test
+    fun testExampleSerializer02() {
+        captureOutput("ExampleSerializer02") { example.exampleSerializer02.main() }.verifyOutputLines(
+            "\"00ff00\""
+        )
+    }
+
+    @Test
+    fun testExampleSerializer03() {
+        captureOutput("ExampleSerializer03") { example.exampleSerializer03.main() }.verifyOutputLines(
+            "65280"
+        )
+    }
+
+    @Test
+    fun testExampleSerializer04() {
+        captureOutput("ExampleSerializer04") { example.exampleSerializer04.main() }.verifyOutputLines(
+            "{\"background\":\"fffffff\",\"foreground\":\"000000\"}"
+        )
+    }
+
+    @Test
+    fun testExampleSerializer05() {
+        captureOutput("ExampleSerializer05") { example.exampleSerializer05.main() }.verifyOutputLines(
+            "{\"r\":0,\"g\":255,\"b\":0}"
+        )
+    }
+
+    @Test
+    fun testExampleSerializer06() {
+        captureOutput("ExampleSerializer06") { example.exampleSerializer06.main() }.verifyOutputLines(
+            "{\"r\":0,\"g\":255,\"b\":0}"
+        )
+    }
+
+    @Test
     fun testExamplePoly01() {
         captureOutput("ExamplePoly01") { example.examplePoly01.main() }.verifyOutputLines(
             "{\"name\":\"kotlinx.coroutines\"}"
@@ -207,7 +250,8 @@ class GuideTest {
     @Test
     fun testExamplePoly02() {
         captureOutput("ExamplePoly02") { example.examplePoly02.main() }.verifyOutputLinesStart(
-            "Exception in thread \"main\" kotlinx.serialization.SerializationException: Serializer for class 'OwnedRepository' is not found. Mark the class as @Serializable or provide the serializer explicitly."
+            "Exception in thread \"main\" kotlinx.serialization.SerializationException: Serializer for class 'OwnedRepository' is not found.",
+            "Mark the class as @Serializable or provide the serializer explicitly."
         )
     }
 
@@ -236,7 +280,7 @@ class GuideTest {
     @Test
     fun testExamplePoly06() {
         captureOutput("ExamplePoly06") { example.examplePoly06.main() }.verifyOutputLines(
-            "{\"type\":\"owned\",\"status\":\"open\",name\":\"kotlinx.coroutines\",\"owner\":\"kotlin\"}"
+            "{\"type\":\"owned\",\"status\":\"open\",\"name\":\"kotlinx.coroutines\",\"owner\":\"kotlin\"}"
         )
     }
 
@@ -257,7 +301,8 @@ class GuideTest {
     @Test
     fun testExamplePoly09() {
         captureOutput("ExamplePoly09") { example.examplePoly09.main() }.verifyOutputLinesStart(
-            "Exception in thread \"main\" kotlinx.serialization.SerializationException: Serializer for class 'Repository' is not found. Mark the class as @Serializable or provide the serializer explicitly."
+            "Exception in thread \"main\" kotlinx.serialization.SerializationException: Serializer for class 'Repository' is not found.",
+            "Mark the class as @Serializable or provide the serializer explicitly."
         )
     }
 
@@ -271,14 +316,16 @@ class GuideTest {
     @Test
     fun testExamplePoly11() {
         captureOutput("ExamplePoly11") { example.examplePoly11.main() }.verifyOutputLinesStart(
-            "Exception in thread \"main\" kotlinx.serialization.SerializationException: Serializer for class 'Any' is not found. Mark the class as @Serializable or provide the serializer explicitly."
+            "Exception in thread \"main\" kotlinx.serialization.SerializationException: Serializer for class 'Any' is not found.",
+            "Mark the class as @Serializable or provide the serializer explicitly."
         )
     }
 
     @Test
     fun testExamplePoly12() {
         captureOutput("ExamplePoly12") { example.examplePoly12.main() }.verifyOutputLinesStart(
-            "Exception in thread \"main\" kotlinx.serialization.SerializationException: Serializer for class 'Any' is not found. Mark the class as @Serializable or provide the serializer explicitly."
+            "Exception in thread \"main\" kotlinx.serialization.SerializationException: Serializer for class 'Any' is not found.",
+            "Mark the class as @Serializable or provide the serializer explicitly."
         )
     }
 
