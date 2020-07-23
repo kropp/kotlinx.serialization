@@ -42,6 +42,9 @@
   * [Sealed classes](#sealed-classes)
   * [Custom subclass serial name](#custom-subclass-serial-name)
   * [Open polymorphism](#open-polymorphism)
+  * [Serializing interfaces](#serializing-interfaces)
+  * [Property of an interface type](#property-of-an-interface-type)
+  * [Static parent type lookup for polymorphism](#static-parent-type-lookup-for-polymorphism)
 * [Custom JSON configuration](#custom-json-configuration)
   * [Pretty printing](#pretty-printing)
   * [Encoding defaults](#encoding-defaults)
@@ -1163,9 +1166,236 @@ fun main() {
 
 > You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-06.kt).
 
-
 This additional configuration makes our code work just as it worked with a sealed class in 
 the [Sealed classes](#sealed-classes) section, but here subclasses can be spread arbitrarily throughout the code:
+
+```text 
+{"type":"owned","name":"kotlinx.coroutines","owner":"kotlin"}
+```                  
+
+<!--- TEST -->
+
+### Serializing interfaces 
+
+We can update the previous example and turn `Repository` superclass into an interface. However, we cannot
+mark an interface itself as `@Serializable`. Only classes can be serializable.
+
+<!--- INCLUDE 
+import kotlinx.serialization.modules.*
+
+val module = SerializersModule {
+    polymorphic(Repository::class) {
+        subclass(OwnedRepository::class)
+    }
+}
+
+val format = Json { serializersModule = module }
+--> 
+
+```kotlin 
+interface Repository {
+    val name: String
+}
+
+@Serializable
+@SerialName("owned")
+class OwnedRepository(override val name: String, val owner: String) : Repository
+```
+
+It means that if we declare `data` with the type of `Repository` and call `format.encodeToString` as we did before:
+
+```kotlin
+fun main() {
+    val data: Repository = OwnedRepository("kotlinx.coroutines", "kotlin")
+    println(format.encodeToString(data))
+}    
+```
+
+> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-07.kt).
+
+Then we get an exception that `Repository` is not serializable:
+
+```text 
+Exception in thread "main" kotlinx.serialization.SerializationException: Serializer for class 'Repository' is not found. Mark the class as @Serializable or provide the serializer explicitly.
+```
+
+<!--- TEST LINES_START -->
+
+But we cannot make an interface serializable, so to fix this exception, we have to provide the serializer explicitly. 
+For polymorphic serialization there is a [PolymorphicSerializer] class. It is constructed with the base class as parameter. 
+If we are serializing interface as the root object, then we pass it as the first argument to 
+the [encodeToString][Json.encodeToString] function:
+
+<!--- INCLUDE 
+import kotlinx.serialization.modules.*
+
+val module = SerializersModule {
+    polymorphic(Repository::class) {
+        subclass(OwnedRepository::class)
+    }
+}
+
+val format = Json { serializersModule = module }
+
+interface Repository {
+    val name: String
+}
+
+@Serializable
+@SerialName("owned")
+class OwnedRepository(override val name: String, val owner: String) : Repository
+-->
+
+```kotlin
+fun main() {
+    val data: Repository = OwnedRepository("kotlinx.coroutines", "kotlin")
+    println(format.encodeToString(PolymorphicSerializer(Repository::class), data))
+}    
+```
+
+> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-08.kt).
+
+Now it works:
+
+```text
+{"type":"owned","name":"kotlinx.coroutines","owner":"kotlin"}
+```
+
+<!--- TEST -->
+
+### Property of an interface type
+
+Continuing the previous example, let us see what happens if we use `Repository` interface as a property in some
+other serializable class. Because interface is not serializable, we cannot simply declare such a property, because
+all serial properties of a serializable class must be serializable. We have to specify its serialization strategy.
+
+:TODO:
+
+### Static parent type lookup for polymorphism
+
+During serialization of a polymorphic class the root type of the polymorphic hierarchy (`Repository` in our example)
+is determined statically. If we take the previous example with the serializable `abstract class Repository`, 
+but change the `main` function to declare `data` as having a type of `Any`:
+
+<!--- INCLUDE 
+import kotlinx.serialization.modules.*
+
+val module = SerializersModule {
+    polymorphic(Repository::class) {
+        subclass(OwnedRepository::class)
+    }
+}
+
+val format = Json { serializersModule = module }
+
+@Serializable
+abstract class Repository {
+    abstract val name: String
+}
+            
+@Serializable
+@SerialName("owned")
+class OwnedRepository(override val name: String, val owner: String) : Repository()
+--> 
+
+```kotlin 
+fun main() {
+    val data: Any = OwnedRepository("kotlinx.coroutines", "kotlin")
+    println(format.encodeToString(data))
+}    
+```
+
+> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-09.kt).
+ 
+We'll get an exception:
+
+```text
+Exception in thread "main" kotlinx.serialization.SerializationException: Serializer for class 'Any' is not found. Mark the class as @Serializable or provide the serializer explicitly.
+```
+
+<!--- TEST LINES_START -->
+
+We have to register classes for polymorphic serialization with respect for the corresponding static type we 
+use in the source code. First of all, we change our module register a subclass of `Any`:
+
+<!--- INCLUDE 
+import kotlinx.serialization.modules.*
+-->
+
+```kotlin
+val module = SerializersModule {
+    polymorphic(Any::class) {
+        subclass(OwnedRepository::class)
+    }
+}
+```                                                                                    
+
+<!--- INCLUDE 
+val format = Json { serializersModule = module }
+
+@Serializable
+abstract class Repository {
+    abstract val name: String
+}
+            
+@Serializable
+@SerialName("owned")
+class OwnedRepository(override val name: String, val owner: String) : Repository()
+-->
+
+The we can try to serialize the variable of type `Any`:
+
+```kotlin
+fun main() {
+    val data: Any = OwnedRepository("kotlinx.coroutines", "kotlin")
+    println(format.encodeToString(data))
+}    
+```
+
+> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-10.kt).
+
+However, the `Any` class not serializable:
+
+```text 
+Exception in thread "main" kotlinx.serialization.SerializationException: Serializer for class 'Any' is not found. Mark the class as @Serializable or provide the serializer explicitly.
+```
+
+<!--- TEST LINES_START -->
+
+So, we have to explicitly pass an instance of [PolymorphicSerializer] for the base class `Any` as the 
+first parameter to the [encodeToString][Json.encodeToString] function.
+
+<!--- INCLUDE 
+import kotlinx.serialization.modules.*
+
+val module = SerializersModule {
+    polymorphic(Any::class) {
+        subclass(OwnedRepository::class)
+    }
+}
+
+val format = Json { serializersModule = module }
+
+@Serializable
+abstract class Repository {
+    abstract val name: String
+}
+            
+@Serializable
+@SerialName("owned")
+class OwnedRepository(override val name: String, val owner: String) : Repository()
+-->
+
+```kotlin
+fun main() {
+    val data: Any = OwnedRepository("kotlinx.coroutines", "kotlin")
+    println(format.encodeToString(PolymorphicSerializer(Any::class), data))
+}    
+```
+
+> You can get the full code [here](../runtime/jvmTest/src/guide/example-poly-11.kt).
+
+Then it works as before:
 
 ```text 
 {"type":"owned","name":"kotlinx.coroutines","owner":"kotlin"}
@@ -1440,6 +1670,7 @@ control on the resulting JSON object:
 [Required]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization/-required/index.html
 [Transient]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization/-transient/index.html
 [SerialName]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization/-serial-name/index.html
+[PolymorphicSerializer]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization/-polymorphic-serializer/index.html
 <!--- INDEX kotlinx.serialization.builtins -->
 [LongAsStringSerializer]: https://kotlin.github.io/kotlinx.serialization/kotlinx-serialization/kotlinx.serialization.builtins/-long-as-string-serializer/index.html
 <!--- INDEX kotlinx.serialization.json -->
